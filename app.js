@@ -87,10 +87,10 @@ function imgEl(inv, size = 300) {
 }
 window.thumbFallback = async function (el) {
   el.onerror = null;
-  const id = el.dataset.id;
+  const id = el.dataset.id, big = el.dataset.size === 'big', key = big ? id + '_big' : id;
   try {
-    if (!thumbCache[id]) { const d = await api('fileData', { id, thumb: true, size: 400 }); thumbCache[id] = `data:${d.mime};base64,${d.data}`; }
-    el.src = thumbCache[id];
+    if (!thumbCache[key]) { const d = await api('fileData', { id, thumb: true, size: big ? 1600 : 400 }); thumbCache[key] = `data:${d.mime};base64,${d.data}`; }
+    el.src = thumbCache[key];
   } catch (e) { el.replaceWith(Object.assign(document.createElement('span'), { textContent: 'PDF' })); }
 };
 
@@ -356,7 +356,7 @@ async function openInvoice(id) {
           <label>ملاحظات<input name="notes" value="${esc(inv.notes)}" ${dis}></label>
         </form>
         <div>
-          <div class="viewer" id="viewer">${inv.file_id ? (isPdf(inv) ? `<a class="btn" href="${esc(inv.file_url)}" target="_blank" rel="noopener">فتح ملف PDF</a>` : `<img src="${thumbUrl(inv, 1600)}" data-id="${esc(inv.id)}" onerror="thumbFallback(this)" alt="صورة الفاتورة">`) : '<span class="muted">لا توجد صورة</span>'}</div>
+          <div class="viewer" id="viewer">${inv.file_id ? (isPdf(inv) ? `<a class="btn" href="${esc(inv.file_url)}" target="_blank" rel="noopener">فتح ملف PDF</a>` : `<img src="${thumbUrl(inv, 1600)}" data-id="${esc(inv.id)}" data-size="big" onerror="thumbFallback(this)" alt="صورة الفاتورة">`) : '<span class="muted">لا توجد صورة</span>'}</div>
           <div class="row gap" style="margin-top:8px">
             ${inv.file_url ? `<a class="btn sm ghost" href="${esc(inv.file_url)}" target="_blank" rel="noopener">فتح الأصل في Drive</a>` : ''}
             ${editable ? `<label class="btn sm ghost"><input type="file" id="newFile" accept="image/*,application/pdf" hidden>${inv.file_id ? 'استبدال الصورة' : 'إرفاق صورة'}</label>` : ''}
@@ -429,6 +429,7 @@ function reportOpts() {
 }
 function restoreReportPrefs() {
   let p = {}; try { p = JSON.parse(localStorage.getItem(LS.rep) || '{}'); } catch (e) { }
+  if (p.v !== 3) delete p.rImages; // صورة الفاتورة تظهر افتراضياً في كل كشف
   RP.forEach(k => { if (k in p && k !== 'rFrom' && k !== 'rTo') { const el = $('#' + k); if (el.type === 'checkbox') el.checked = p[k]; else el.value = p[k]; } });
   if (!p.rDate) $('#rDate').value = S.settings.dateMode || 'ميلادي';
   if (p.logo) { const r = $(`input[name=rLogo][value="${p.logo}"]`); if (r) r.checked = true; }
@@ -479,13 +480,13 @@ function sums(rows) {
 }
 function buildReport() {
   const o = reportOpts();
-  try { localStorage.setItem(LS.rep, JSON.stringify(o)); } catch (e) { }
+  try { localStorage.setItem(LS.rep, JSON.stringify({ ...o, v: 3 })); } catch (e) { }
   const rows = reportData(o), cols = columns(o), T = reportTitle(o), cur = S.settings.currency || 'ريال';
   const period = (o.rFrom || o.rTo) ? `الفترة: من ${o.rFrom ? showDate(o.rFrom, o.rDate) : 'البداية'} إلى ${o.rTo ? showDate(o.rTo, o.rDate) : 'اليوم'}` : 'الفترة: جميع الفواتير';
   const L = s => (o.logo === 'both' || o.logo === s) ? `<img src="${esc(logoSrc(s))}" alt="">` : '';
   const thead = `<thead><tr>${cols.map(c => `<th class="${c.cls === 'amt' ? 'amt' : ''}">${c.t}</th>`).join('')}</tr></thead>`;
   const tr = (x, i) => `<tr class="${x.status === 'مكررة' ? 'dup' : ''}">${cols.map(c => c.k === 'image'
-    ? `<td class="img">${x.file_id ? (isPdf(x) ? `<a href="${esc(x.file_url)}">PDF</a>` : `<img src="${thumbCache[x.id] || thumbUrl(x, 300)}" data-id="${esc(x.id)}" onerror="thumbFallback(this)" alt="">`) : ''}</td>`
+    ? `<td class="img">${x.file_id ? `<a href="${esc(x.file_url)}" target="_blank" rel="noopener" data-view="${esc(x.id)}" title="اضغط لعرض الفاتورة">${isPdf(x) ? '<span class="pdf-tag">PDF</span>' : `<img src="${thumbCache[x.id] || thumbUrl(x, 300)}" data-id="${esc(x.id)}" onerror="thumbFallback(this)" alt="صورة الفاتورة ${esc(x.code)}">`}</a>` : '<span class="muted">—</span>'}</td>`
     : `<td class="${c.cls || ''}">${esc(cellText(x, c.k, i, o))}</td>`).join('')}</tr>`;
   const totRow = (s, label) => {
     const ti = cols.findIndex(c => c.k === 'total');
@@ -529,6 +530,21 @@ function buildReport() {
   $('#btnPrint').disabled = $('#btnExcel').disabled = false;
 }
 $('#btnReport').onclick = buildReport;
+// الضغط على صورة الفاتورة في الكشف يعرضها كبيرة
+$('#reportWrap').addEventListener('click', e => {
+  const a = e.target.closest('[data-view]'); if (!a) return;
+  e.preventDefault(); viewInvoiceImage(a.dataset.view);
+});
+function viewInvoiceImage(id) {
+  const x = S.invoices.find(v => v.id === id); if (!x) return;
+  const b = modal.open(head(`الفاتورة ${esc(x.code)} — ${esc(x.vendor || '')} — ${money(x.total)}`) + `
+    <div class="m-body"><div class="viewer big" id="bigView">${isPdf(x)
+      ? `<iframe src="https://drive.google.com/file/d/${esc(x.file_id)}/preview" title="الفاتورة"></iframe>`
+      : `<img src="${thumbCache[x.id + '_big'] || thumbUrl(x, 1600)}" data-id="${esc(x.id)}" data-size="big" onerror="thumbFallback(this)" alt="صورة الفاتورة">`}</div></div>
+    <div class="m-foot"><a class="btn" href="${esc(x.file_url)}" target="_blank" rel="noopener">فتح الأصل في Drive</a><button class="btn" id="toInv">بيانات الفاتورة</button><span class="spacer"></span><button class="btn" data-close>إغلاق</button></div>`);
+  $('#bigView img', b)?.addEventListener('click', ev => ev.currentTarget.parentElement.classList.toggle('zoom'));
+  $('#toInv', b).onclick = () => openInvoice(id);
+}
 $('#btnPrint').onclick = () => {
   if (!S.report) return;
   $('#printArea').innerHTML = $('#reportWrap').innerHTML;
@@ -585,7 +601,7 @@ $('#btnExcel').onclick = async e => {
         const cell = row.getCell(j + 1);
         if (['total', 'subtotal', 'vat'].includes(c.k)) { cell.value = x[c.k] === '' ? null : Number(x[c.k]); cell.numFmt = '#,##0.00'; }
         else if (c.k === 'date') { cell.value = showDate(x.date, o.rDate); }
-        else if (c.k === 'image') { cell.value = x.file_url ? { text: 'فتح الفاتورة', hyperlink: x.file_url } : ''; }
+        else if (c.k === 'image') { cell.value = x.file_url ? { text: isPdf(x) ? 'فتح الفاتورة (PDF)' : 'فتح الفاتورة', hyperlink: x.file_url } : ''; }
         else cell.value = cellText(x, c.k, i, o);
         cell.font = { name: 'Traditional Arabic', size: 14, bold: true, color: x.status === 'مكررة' ? { argb: 'FF9B1C1C' } : undefined, strike: x.status === 'مكررة' && c.k === 'total' };
         cell.border = border; cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
@@ -618,7 +634,7 @@ $('#btnExcel').onclick = async e => {
           try {
             if (!thumbCache[x.id]) { const d = await api('fileData', { id: x.id, thumb: true, size: 300 }); thumbCache[x.id] = `data:${d.mime};base64,${d.data}`; }
             const id = wb.addImage({ base64: thumbCache[x.id].split(',')[1], extension: 'jpeg' });
-            ws.addImage(id, { tl: { col: imgCol + 0.1, row: rr - 1 + 0.05 }, ext: { width: 140, height: 118 } });
+            ws.addImage(id, { tl: { col: imgCol + 0.1, row: rr - 1 + 0.05 }, ext: { width: 140, height: 118 }, hyperlinks: { hyperlink: x.file_url, tooltip: 'اضغط لفتح الفاتورة' } });
           } catch (err) { }
           btn.innerHTML = `الصور ${++done}/${imgs.length}`;
         }

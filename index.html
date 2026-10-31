@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Amiri:wght@400;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=1">
+<link rel="stylesheet" href="styles.css?v=3">
 <script src="config.js?v=2"></script>
 </head>
 <body>
@@ -148,6 +148,7 @@
           </div>
           <label class="field">التصنيف<select id="rCat"><option value="">كل التصنيفات</option></select>
             <span class="check"><input type="checkbox" id="rGroup"> تقرير حسب التصنيف (مجاميع لكل تصنيف)</span>
+            <span class="check"><input type="checkbox" id="rImages" checked> صورة الفاتورة أمام بياناتها</span>
           </label>
           <div class="field">الشعارات
             <div class="seg wrap" id="rLogo">
@@ -161,7 +162,6 @@
         <details class="more">
           <summary>أعمدة وخيارات إضافية</summary>
           <div class="checks">
-            <label class="check"><input type="checkbox" id="rImages"> صور الفواتير أمام بياناتها</label>
             <label class="check"><input type="checkbox" id="rVat"> المبلغ قبل الضريبة والضريبة</label>
             <label class="check"><input type="checkbox" id="rVatNo"> الرقم الضريبي للمورد</label>
             <label class="check"><input type="checkbox" id="rKindCol"> نوع المستند</label>
@@ -197,6 +197,6 @@
 <!-- الكشف المطبوع -->
 <div id="printArea"></div>
 
-<script src="app.js?v=1"></script>
+<script src="app.js?v=3"></script>
 </body>
 </html>

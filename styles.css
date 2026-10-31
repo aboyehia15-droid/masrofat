@@ -195,7 +195,13 @@ details.more summary { cursor: pointer; color: var(--green); font-weight: 600; }
 .sheet td.amt, .sheet th.amt { background: #f0f0f0; font-weight: 700; font-family: "IBM Plex Sans Arabic", sans-serif; font-variant-numeric: tabular-nums; font-size: 13px; white-space: nowrap; }
 .sheet td.num { font-family: "IBM Plex Sans Arabic", sans-serif; font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .sheet td.txt { text-align: right; }
-.sheet td.img img { width: 90px; height: 90px; object-fit: contain; display: block; margin: auto; }
+.sheet td.img img { width: 90px; height: 90px; object-fit: contain; display: block; margin: auto; cursor: zoom-in; border: 1px solid #ddd; border-radius: 4px; background: #fff; }
+.sheet td.img a { display: block; text-decoration: none; }
+.sheet td.img img:hover { outline: 2px solid var(--green); }
+.pdf-tag { display: inline-block; background: var(--red-soft); color: var(--red); font-weight: 700; padding: 4px 10px; border-radius: 6px; font-family: sans-serif; font-size: 13px; }
+.viewer.big { min-height: 60vh; }
+.viewer.big img { max-height: 75vh; }
+.viewer.big iframe { width: 100%; height: 75vh; border: 0; }
 .sheet tr.dup td { color: #8a1c14; background: #fff3f2; }
 .sheet tr.dup td.amt { text-decoration: line-through; }
 .sheet tr.tot td { background: #d9d9d9; font-weight: 700; font-size: 16px; }
