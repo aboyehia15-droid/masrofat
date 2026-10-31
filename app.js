@@ -183,6 +183,7 @@ function fillCatSelects() {
 // التبويبات
 $('#tabs').addEventListener('click', e => { const b = e.target.closest('button[data-tab]'); if (b) switchTab(b.dataset.tab); });
 function switchTab(t) {
+  if (t === 'list' && S.invoices.length) renderList();
   $$('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
   $$('.view').forEach(v => v.hidden = v.id !== 'view-' + t);
   if (t === 'log') loadLog();
@@ -255,6 +256,7 @@ function renderList() {
       <div class="inv-main">
         <div class="inv-title"><span class="code">${esc(x.code)}</span><span>${esc(x.vendor || 'بدون اسم مؤسسة')}</span>${kindBadge(x.kind)}${statusBadge(x.status, x.dup_of)}</div>
         <div class="inv-desc">${esc(x.description || '—')}${x.category ? ' · <b>' + esc(x.category) + '</b>' : ''}</div>
+        ${reviewReason(x) ? `<div class="inv-why">⚠️ ${esc(reviewReason(x))}</div>` : ''}
         <div class="inv-sub"><span>📅 ${esc(showDate(x.date) || 'بلا تاريخ')}</span>${x.number ? `<span>رقم: ${esc(x.number)}</span>` : ''}<span>أدخلها ${esc(x.created_by)} — ${esc(x.created_at)}</span>${x.updated_by ? `<span>عدّلها ${esc(x.updated_by)} — ${esc(x.updated_at)}</span>` : ''}</div>
       </div>
       <div class="amount">${money(x.total)}<small>${Number(x.vat) ? 'ضريبة ' + money(x.vat) : ''}</small></div>
@@ -279,7 +281,7 @@ $('#fileInput').onchange = e => { enqueue([...e.target.files]); e.target.value =
 $('#camInput').onchange = e => { enqueue([...e.target.files]); e.target.value = ''; };
 $('#btnManual').onclick = () => openInvoice(null);
 
-const Q = { items: [], running: 0, MAX: 2 };
+const Q = { items: [], running: 0, MAX: 1 }; // فاتورة واحدة في كل مرة حتى لا نتجاوز حد Gemini المجاني
 const isPdfFile = f => /pdf$/i.test(f.type) || /\.pdf$/i.test(f.name);
 async function enqueue(files) {
   files = files.filter(f => /^image\//i.test(f.type) || isPdfFile(f) || /\.(jpe?g|png|webp|heic)$/i.test(f.name));
@@ -346,16 +348,42 @@ async function processItem(it) {
       r._aiError ? 'حُفظت — تعذّرت القراءة الآلية: ' + r._aiError :
         r.status === 'تحتاج مراجعة' ? 'حُفظت — أكمل البيانات الناقصة' : 'تم الحفظ';
     upsertLocal(r);
+    // إن تعذّرت القراءة بسبب ازدحام أو حد مؤقت: نعيد المحاولة تلقائياً
+    if (r._aiError && r.status !== 'مكررة' && can('edit')) {
+      for (let k = 1; k <= 3; k++) {
+        const wait = 15 * k;
+        for (let sec = wait; sec > 0; sec--) { it.msg = `تعذّرت القراءة (${r._aiError}) — إعادة المحاولة تلقائياً بعد ${sec} ث (${k} من 3)`; renderQueue(); await sleep(1000); }
+        it.msg = 'إعادة القراءة…'; renderQueue();
+        try {
+          const r2 = await api('reread', { id: r.id, save: true });
+          upsertLocal(r2); it.inv = r2;
+          it.state = r2.status === 'مكررة' ? 'dup' : r2.status === 'تحتاج مراجعة' ? 'review' : 'ok';
+          it.msg = r2.status === 'تحتاج مراجعة' ? 'قُرئت — أكمل البيانات الناقصة' : 'قُرئت وحُفظت ✓';
+          break;
+        } catch (e2) { r._aiError = e2.message; it.msg = 'تعذّرت القراءة: ' + e2.message; }
+      }
+    }
   } catch (e) { it.state = 'err'; it.msg = e.message; }
   renderQueue();
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+// لماذا تحتاج الفاتورة مراجعة؟
+function reviewReason(x) {
+  if (x.status !== 'تحتاج مراجعة') return '';
+  if (x.ai_error) return 'لم تُقرأ: ' + x.ai_error;
+  const miss = [];
+  if (!Number(x.total)) miss.push('المبلغ');
+  if (!x.date) miss.push('التاريخ');
+  return miss.length ? 'ينقصها: ' + miss.join(' و') : '';
 }
 function upsertLocal(r) {
   const clean = Object.fromEntries(Object.entries(r).filter(([k]) => !k.startsWith('_')));
   const i = S.invoices.findIndex(x => x.id === clean.id);
   if (i >= 0) S.invoices[i] = clean; else S.invoices.push(clean);
+  if (!$("#view-list").hidden) renderList();
 }
 // فواتير لها صورة لكنها لم تُقرأ (بلا مبلغ)
-function unread(list) { return list.filter(x => x.file_id && x.status !== 'مكررة' && !Number(x.total)); }
+function unread(list) { return list.filter(x => x.file_id && x.status !== 'مكررة' && (!Number(x.total) || x.ai_error)); }
 let REREADING = false;
 async function rereadMany(ids, btn) {
   if (REREADING || !ids.length) return;
@@ -365,6 +393,7 @@ async function rereadMany(ids, btn) {
     for (let i = 0; i < ids.length; i++) {
       if (btn) btn.textContent = `جارٍ القراءة ${i + 1} من ${ids.length}…`;
       try {
+        if (i) await sleep(3000);
         const r = await api('reread', { id: ids[i], save: true });
         upsertLocal(r); renderQueueSync(r, 'قُرئت من جديد'); ok++;
       } catch (e) { fail++; lastErr = e.message; }

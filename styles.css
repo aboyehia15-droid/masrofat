@@ -298,3 +298,5 @@ table.plain td.small { min-width: 220px; }
   .sheet tr { break-inside: avoid; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+.inv-why { color: var(--amber); font-size: 13px; font-weight: 600; }
