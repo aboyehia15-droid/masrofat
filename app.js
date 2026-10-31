@@ -232,6 +232,9 @@ function filtered() {
   ));
 }
 function renderList() {
+  const un = unread(S.invoices);
+  const rb = $('#btnRereadAll');
+  if (rb && !REREADING) { rb.hidden = !(un.length && can('edit')); rb.textContent = `↻ إعادة قراءة ما لم يُقرأ (${un.length})`; }
   const list = filtered();
   const valid = list.filter(x => x.status !== 'مكررة');
   const sum = valid.reduce((a, x) => a + Number(x.total || 0), 0);
@@ -262,6 +265,7 @@ try { const v = localStorage.getItem('mx_sort'); if (v) $('#fSort').value = v; }
 $('#fSort').addEventListener('change', () => { try { localStorage.setItem('mx_sort', $('#fSort').value); } catch (e) { } renderList(); });
 $('#fClear').onclick = () => { ['#fSearch', '#fKind', '#fCat', '#fStatus', '#fFrom', '#fTo'].forEach(s => $(s).value = ''); renderList(); };
 $('#btnRefresh').onclick = loadInvoices;
+$('#btnRereadAll').onclick = e => rereadMany(unread(S.invoices).map(x => x.id), e.currentTarget);
 $('#invList').addEventListener('click', e => { const r = e.target.closest('.inv'); if (r) openInvoice(r.dataset.id); });
 
 // =====================================================================
@@ -312,10 +316,30 @@ function upsertLocal(r) {
   const i = S.invoices.findIndex(x => x.id === clean.id);
   if (i >= 0) S.invoices[i] = clean; else S.invoices.push(clean);
 }
+// فواتير لها صورة لكنها لم تُقرأ (بلا مبلغ)
+function unread(list) { return list.filter(x => x.file_id && x.status !== 'مكررة' && !Number(x.total)); }
+let REREADING = false;
+async function rereadMany(ids, btn) {
+  if (REREADING || !ids.length) return;
+  if (!can('edit')) return toast('إعادة القراءة تحتاج صلاحية التعديل', true);
+  REREADING = true; let ok = 0, fail = 0, lastErr = '';
+  try {
+    for (let i = 0; i < ids.length; i++) {
+      if (btn) btn.textContent = `جارٍ القراءة ${i + 1} من ${ids.length}…`;
+      try {
+        const r = await api('reread', { id: ids[i], save: true });
+        upsertLocal(r); renderQueueSync(r, 'قُرئت من جديد'); ok++;
+      } catch (e) { fail++; lastErr = e.message; }
+    }
+  } finally { REREADING = false; }
+  renderList(); renderQueue();
+  toast(fail ? `قُرئت ${ok}، وتعذّرت ${fail}: ${lastErr}` : `تمت قراءة ${ok} فاتورة ✓`, !!fail);
+}
 function renderQueue() {
   if (!Q.items.length) { $('#queue').innerHTML = ''; return; }
   const done = Q.items.filter(i => !['wait', 'busy'].includes(i.state)).length;
-  $('#queue').innerHTML = `<div class="row gap" style="justify-content:space-between"><b>المرفوعة: ${done} من ${Q.items.length}</b>${done === Q.items.length ? '<button class="btn ghost sm" id="qClear">مسح القائمة</button>' : ''}</div>` +
+  const qUnread = done === Q.items.length ? unread(Q.items.filter(i => i.inv).map(i => S.invoices.find(x => x.id === i.inv.id) || i.inv)) : [];
+  $('#queue').innerHTML = `<div class="row gap" style="justify-content:space-between"><b>المرفوعة: ${done} من ${Q.items.length}</b><span class="row gap">${qUnread.length && can('edit') ? `<button class="btn primary sm" id="qReread">↻ إعادة قراءة ما لم يُقرأ (${qUnread.length})</button>` : ''}${done === Q.items.length ? '<button class="btn ghost sm" id="qClear">مسح القائمة</button>' : ''}</span></div>` +
     Q.items.map(it => {
       const inv = it.inv;
       const color = { ok: 'var(--green)', dup: 'var(--red)', review: 'var(--amber)', err: 'var(--red)' }[it.state] || 'var(--muted)';
@@ -325,7 +349,7 @@ function renderQueue() {
           ${inv ? `<div class="small muted">${esc(inv.description || '')} ${inv.category ? '· ' + esc(inv.category) : ''} ${inv.date ? '· ' + esc(showDate(inv.date)) : ''}</div>` : ''}
           <div class="q-state" style="color:${color}">${esc(it.msg)}</div>
           ${it.state === 'busy' ? '<div class="bar busy"><i></i></div>' : ''}</div>
-        <div class="row gap">${inv ? `<b class="amount">${money(inv.total)}</b><button class="btn sm" data-open="${esc(inv.id)}">مراجعة / تعديل</button>` : ''}${it.state === 'err' ? `<button class="btn sm" data-retry="${it.id}">إعادة</button>` : ''}</div>
+        <div class="row gap">${inv ? `<b class="amount">${money(inv.total)}</b>${it.state === 'review' && inv.file_id && !Number(inv.total) && can('edit') ? `<button class="btn sm" data-reread="${esc(inv.id)}">↻ إعادة القراءة</button>` : ''}<button class="btn sm" data-open="${esc(inv.id)}">مراجعة / تعديل</button>` : ''}${it.state === 'err' ? `<button class="btn sm" data-retry="${it.id}">إعادة</button>` : ''}</div>
       </div>`;
     }).join('');
 }
@@ -333,6 +357,8 @@ $('#queue').addEventListener('click', e => {
   const o = e.target.closest('[data-open]'); if (o) return openInvoice(o.dataset.open);
   const r = e.target.closest('[data-retry]'); if (r) { const it = Q.items.find(i => i.id === r.dataset.retry); it.state = 'wait'; it.msg = 'في الانتظار…'; renderQueue(); pump(); }
   if (e.target.id === 'qClear') { Q.items = []; renderQueue(); }
+  const rr = e.target.closest('[data-reread]'); if (rr) rereadMany([rr.dataset.reread], rr);
+  if (e.target.id === 'qReread') rereadMany(unread(Q.items.filter(i => i.inv).map(i => S.invoices.find(x => x.id === i.inv.id) || i.inv)).map(x => x.id), e.target);
 });
 
 // =====================================================================
@@ -425,7 +451,7 @@ async function openInvoice(id) {
     } catch (err) { toast(err.message, true); } finally { busy(e.target, false); }
   });
 }
-function renderQueueSync(r) { const it = Q.items.find(i => i.inv && i.inv.id === r.id); if (it) { it.inv = r; it.state = r.status === 'مكررة' ? 'dup' : r.status === 'تحتاج مراجعة' ? 'review' : 'ok'; it.msg = 'عُدّلت'; renderQueue(); } }
+function renderQueueSync(r, msg) { const it = Q.items.find(i => i.inv && i.inv.id === r.id); if (it) { it.inv = r; it.state = r.status === 'مكررة' ? 'dup' : r.status === 'تحتاج مراجعة' ? 'review' : 'ok'; it.msg = r.status === 'مكررة' ? `مكررة — أصلها ${r.dup_of}` : (msg || 'عُدّلت'); renderQueue(); } }
 
 // =====================================================================
 // ٦) الكشوف
