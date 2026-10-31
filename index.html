@@ -89,6 +89,7 @@
         <select id="fStatus"><option value="">كل الحالات</option><option>سليمة</option><option>مكررة</option><option>تحتاج مراجعة</option></select>
         <label class="inline">من <input type="date" id="fFrom"></label>
         <label class="inline">إلى <input type="date" id="fTo"></label>
+        <select id="fSort" title="الترتيب حسب تاريخ الفاتورة"><option value="asc">الأقدم في الأعلى</option><option value="desc">الأحدث في الأعلى</option></select>
         <button class="btn ghost sm" id="fClear">مسح</button>
         <button class="btn ghost sm" id="btnRefresh" title="تحديث">↻ تحديث</button>
       </div>
@@ -197,6 +198,6 @@
 <!-- الكشف المطبوع -->
 <div id="printArea"></div>
 
-<script src="app.js?v=3"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>

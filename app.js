@@ -215,7 +215,14 @@ async function loadInvoices() {
   try { S.invoices = await api('list'); } catch (e) { $('#invList').innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
   renderList();
 }
-function sortInv(a) { return a.sort((x, y) => (y.date || '').localeCompare(x.date || '') || (y.created_at || '').localeCompare(x.created_at || '')); }
+// الترتيب حسب تاريخ الفاتورة: الأقدم في الأعلى (افتراضياً) أو الأحدث في الأعلى، والفواتير بلا تاريخ في الآخر
+function sortInv(a) {
+  const dir = $('#fSort').value === 'desc' ? -1 : 1;
+  return a.sort((x, y) => {
+    if (!x.date !== !y.date) return x.date ? -1 : 1;
+    return dir * ((x.date || '').localeCompare(y.date || '') || (x.created_at || '').localeCompare(y.created_at || ''));
+  });
+}
 function filtered() {
   const q = $('#fSearch').value.trim().toLowerCase(), k = $('#fKind').value, c = $('#fCat').value, st = $('#fStatus').value, f = $('#fFrom').value, t = $('#fTo').value;
   return sortInv(S.invoices.filter(x =>
@@ -251,6 +258,8 @@ function renderList() {
     </div>`).join('') + (list.length > shown.length ? `<p class="muted center">يظهر أول ${shown.length} من ${list.length} — استخدم البحث أو الفلاتر.</p>` : '');
 }
 ['#fSearch', '#fKind', '#fCat', '#fStatus', '#fFrom', '#fTo'].forEach(s => $(s).addEventListener('input', renderList));
+try { const v = localStorage.getItem('mx_sort'); if (v) $('#fSort').value = v; } catch (e) { }
+$('#fSort').addEventListener('change', () => { try { localStorage.setItem('mx_sort', $('#fSort').value); } catch (e) { } renderList(); });
 $('#fClear').onclick = () => { ['#fSearch', '#fKind', '#fCat', '#fStatus', '#fFrom', '#fTo'].forEach(s => $(s).value = ''); renderList(); };
 $('#btnRefresh').onclick = loadInvoices;
 $('#invList').addEventListener('click', e => { const r = e.target.closest('.inv'); if (r) openInvoice(r.dataset.id); });
@@ -728,17 +737,37 @@ function showSet(t) {
     P.onclick = async e => { const s = e.target.dataset.reset; if (!s) return; await saveSettings({ ['logo' + (s === 'right' ? 'Right' : 'Left')]: '' }); $('#lg-' + s).src = logoSrc(s); applyBrand(); };
   }
   if (t === 'ai') {
+    const keyField = (name, label, ph) => `<label class="full">مفتاح ${label} ${st[name + 'Set'] ? `<small class="muted">(محفوظ: <span dir="ltr">${esc(st[name + 'Hint'])}</span>) — اتركه فارغاً للإبقاء عليه</small>` : '<small style="color:var(--red)">(غير مضبوط)</small>'}<input name="${name}" dir="ltr" autocomplete="off" placeholder="${ph}"></label>`;
     P.innerHTML = `<h3>القراءة الآلية للفواتير</h3>
-      <p class="note">تُقرأ الفاتورة بخدمة Gemini من جوجل (مجانية بحدود يومية). أنشئ مفتاحاً مجانياً من <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a> ثم ألصقه هنا. يُحفظ المفتاح في الخادم فقط ولا يظهر لأحد.</p><br>
+      <p class="note">القارئ المستخدم الآن: <b>${esc(st.aiActive || '—')}</b></p><br>
       <form class="form-grid" id="sf">
         <label class="check full"><input type="checkbox" name="aiEnabled" ${yes('aiEnabled')}> تفعيل القراءة الآلية</label>
-        <label class="full">مفتاح Gemini ${st.geminiKeySet ? `<small class="muted">(محفوظ: <span dir="ltr">${esc(st.geminiKeyHint)}</span>) — اتركه فارغاً للإبقاء عليه</small>` : '<small style="color:var(--red)">(غير مضبوط)</small>'}<input name="geminiKey" dir="ltr" autocomplete="off" placeholder="AIza…"></label>
-        <label>النموذج<input name="aiModel" dir="ltr" value="${esc(st.aiModel)}"></label>
+        <div class="field full">من يقرأ الفواتير
+          <div class="seg">${[['تلقائي', 'تلقائي (Claude إن وُجد مفتاحه)'], ['Claude', 'Claude'], ['Gemini', 'Gemini']].map(([v, t]) => `<label><input type="radio" name="aiProvider" value="${v}" ${st.aiProvider === v ? 'checked' : ''}><span>${t}</span></label>`).join('')}</div>
+        </div>
+        <h4 class="full" style="margin:10px 0 0">Claude (من Anthropic)</h4>
+        <p class="muted small full" style="margin:0">مدفوع بحسب الاستخدام (يحتاج رصيداً مسبقاً). أنشئ المفتاح من <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a> — يبدأ بـ sk-ant-</p>
+        ${keyField('claudeKey', 'Claude', 'sk-ant-…')}
+        <label>نموذج Claude<input name="claudeModel" dir="ltr" value="${esc(st.claudeModel)}"></label><div></div>
+        <h4 class="full" style="margin:10px 0 0">Gemini (من جوجل)</h4>
+        <p class="muted small full" style="margin:0">مجاني بحدود يومية. المفتاح من <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a></p>
+        ${keyField('geminiKey', 'Gemini', 'AQ… أو AIza…')}
+        <label>نموذج Gemini<input name="aiModel" dir="ltr" value="${esc(st.aiModel)}"></label><div></div>
       </form>
-      <div class="row gap end"><button class="btn" id="aiTest">اختبار الاتصال</button>${st.geminiKeySet ? '<button class="btn danger" id="aiClear">حذف المفتاح</button>' : ''}<button class="btn primary" id="setSave">حفظ</button></div>`;
-    bindSave(P);
-    $('#aiTest').onclick = async e => { busy(e.target, true, 'جارٍ…'); try { const r = await api('testAi'); toast(r.ok ? 'القراءة الآلية تعمل ✓' : 'رد غير متوقع'); } catch (err) { toast(err.message, true); } finally { busy(e.target, false); } };
-    $('#aiClear')?.addEventListener('click', () => saveSettings({ geminiKey: '__clear__' }).then(() => showSet('ai')));
+      <p class="muted small">المفاتيح تُحفظ في الخادم فقط ولا تظهر لأي مستخدم.</p>
+      <div class="row gap end"><button class="btn" id="aiTest">اختبار القارئ الحالي</button>${st.claudeKeySet ? '<button class="btn danger" data-clear="claudeKey">حذف مفتاح Claude</button>' : ''}${st.geminiKeySet ? '<button class="btn danger" data-clear="geminiKey">حذف مفتاح Gemini</button>' : ''}<button class="btn primary" id="setSave">حفظ</button></div>`;
+    $('#setSave', P).onclick = async () => {
+      const f = $('#sf', P), o = {};
+      $$('input,select,textarea', f).forEach(el => {
+        if (!el.name) return;
+        if (el.type === 'radio') { if (el.checked) o[el.name] = el.value; return; }
+        o[el.name] = el.type === 'checkbox' ? (el.checked ? 'نعم' : 'لا') : el.value;
+      });
+      ['claudeKey', 'geminiKey'].forEach(k => { if (!o[k]) delete o[k]; });
+      try { await saveSettings(o); showSet('ai'); } catch (e) { }
+    };
+    $('#aiTest').onclick = async e => { busy(e.target, true, 'جارٍ…'); try { const r = await api('testAi'); toast(r.ok ? `القراءة الآلية تعمل ✓ (${r.provider})` : 'رد غير متوقع'); } catch (err) { toast(err.message, true); } finally { busy(e.target, false); } };
+    $$('[data-clear]', P).forEach(b => b.onclick = () => saveSettings({ [b.dataset.clear]: '__clear__' }).then(() => showSet('ai')));
   }
   if (t === 'dups') {
     P.innerHTML = `<h3>اكتشاف الفواتير المكررة</h3><p class="muted small">الفاتورة المكررة تُحفظ وعليها علامة «مكررة»، ولا تدخل في الإجماليات ولا الكشوف. يمكن لمن لديه صلاحية التعديل إلغاء العلامة.</p>
