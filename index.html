@@ -123,6 +123,12 @@
             </div>
           </div>
           <label class="field">التصنيف<select id="upCat"><option value="">تلقائي (يقترحه البرنامج)</option></select></label>
+          <div class="field">ملف PDF فيه أكثر من صفحة
+            <div class="seg">
+              <label><input type="radio" name="pdfMode" value="pages" checked><span>كل صفحة فاتورة مستقلة</span></label>
+              <label><input type="radio" name="pdfMode" value="one"><span>الملف كله فاتورة واحدة</span></label>
+            </div>
+          </div>
           <label class="check"><input type="checkbox" id="upAi" checked> قراءة الفاتورة آلياً وتعبئة بياناتها</label>
           <p class="muted small">الفاتورة المكررة تُحفظ وعليها علامة «مكررة» ولا تدخل في الإجماليات.</p>
         </div>
@@ -199,6 +205,6 @@
 <!-- الكشف المطبوع -->
 <div id="printArea"></div>
 
-<script src="app.js?v=5"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>

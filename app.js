@@ -280,15 +280,53 @@ $('#camInput').onchange = e => { enqueue([...e.target.files]); e.target.value = 
 $('#btnManual').onclick = () => openInvoice(null);
 
 const Q = { items: [], running: 0, MAX: 2 };
-function enqueue(files) {
-  files = files.filter(f => /^image\/|pdf$/i.test(f.type) || /\.(jpe?g|png|webp|heic|pdf)$/i.test(f.name));
+const isPdfFile = f => /pdf$/i.test(f.type) || /\.pdf$/i.test(f.name);
+async function enqueue(files) {
+  files = files.filter(f => /^image\//i.test(f.type) || isPdfFile(f) || /\.(jpe?g|png|webp|heic)$/i.test(f.name));
   if (!files.length) return toast('اختر صوراً أو ملفات PDF', true);
   const opts = { kind: $('input[name=upKind]:checked').value, cat: $('#upCat').value, ai: $('#upAi').checked };
-  files.forEach(f => {
-    const it = { id: Math.random().toString(36).slice(2), file: f, opts, state: 'wait', msg: 'في الانتظار…' };
-    Q.items.unshift(it);
-  });
+  const split = $('input[name=pdfMode]:checked').value === 'pages';
+  const all = [];
+  for (const f of files) {
+    if (split && isPdfFile(f)) {
+      try { all.push(...await pdfToPages(f)); }
+      catch (e) { toast(`تعذّر تقسيم «${f.name}» إلى صفحات، فرُفع كفاتورة واحدة`, true); all.push(f); }
+    } else all.push(f);
+  }
+  all.forEach(f => Q.items.unshift({ id: Math.random().toString(36).slice(2), file: f, opts, state: 'wait', msg: 'في الانتظار…' }));
   renderQueue(); pump();
+}
+// تحويل كل صفحة من ملف PDF إلى صورة مستقلة (فاتورة لكل صفحة)
+function loadPdfJs() {
+  if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  const base = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+  return new Promise((ok, no) => {
+    const sc = document.createElement('script'); sc.src = base + 'pdf.min.js';
+    sc.onload = () => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = base + 'pdf.worker.min.js'; ok(window.pdfjsLib); };
+    sc.onerror = () => no(new Error('تعذّر تحميل قارئ PDF'));
+    document.head.appendChild(sc);
+  });
+}
+async function pdfToPages(file) {
+  const lib = await loadPdfJs();
+  const pdf = await lib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+  const base = file.name.replace(/\.pdf$/i, '');
+  if (pdf.numPages > 1) toast(`«${base}»: ${pdf.numPages} صفحات — كل صفحة فاتورة مستقلة`);
+  const out = [];
+  for (let n = 1; n <= pdf.numPages; n++) {
+    const page = await pdf.getPage(n);
+    const v1 = page.getViewport({ scale: 1 });
+    const scale = Math.min(3, 2000 / Math.max(v1.width, v1.height));
+    const vp = page.getViewport({ scale });
+    const c = document.createElement('canvas'); c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+    const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+    await page.render({ canvasContext: ctx, viewport: vp }).promise;
+    const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.88));
+    out.push(new File([blob], `${base} - صفحة ${n}.jpg`, { type: 'image/jpeg' }));
+    page.cleanup && page.cleanup();
+  }
+  pdf.destroy && pdf.destroy();
+  return out;
 }
 function pump() {
   while (Q.running < Q.MAX) {
