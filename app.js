@@ -53,7 +53,8 @@ function showDate(s, mode) { mode = mode || S.settings.dateMode || 'ميلادي
 function stamp() { const d = new Date(); return ymd(d) + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); }
 function cats() { return String(S.settings.categories || S.boot?.categories || '').split('\n').map(s => s.trim()).filter(Boolean); }
 function kindBadge(k) { const c = { 'ضريبية': 'b-tax', 'بدون ضريبة': 'b-notax', 'ورقة مكتوبة': 'b-paper' }[k] || 'b-notax'; return k ? `<span class="badge ${c}">${esc(k)}</span>` : ''; }
-function statusBadge(s, dupOf) {
+function statusBadge(s, dupOf, x) {
+  if (s === 'مرفق') { const p = x && S.invoices.find(v => v.id === x.attach_to); return `<span class="badge b-att">📎 مرفق${p ? ' للفاتورة ' + esc(p.code) : ''}</span>`; }
   if (s === 'مكررة') return `<span class="badge b-dup">مكررة${dupOf ? ' من ' + esc(dupOf) : ''}</span>`;
   if (s === 'تحتاج مراجعة') return '<span class="badge b-review">تحتاج مراجعة</span>';
   return '';
@@ -237,7 +238,7 @@ function renderList() {
   const rb = $('#btnRereadAll');
   if (rb && !REREADING) { rb.hidden = !(un.length && can('edit')); rb.textContent = `↻ إعادة قراءة ما لم يُقرأ (${un.length})`; }
   const list = filtered();
-  const valid = list.filter(x => x.status !== 'مكررة');
+  const valid = list.filter(x => x.status !== 'مكررة' && x.status !== 'مرفق');
   const sum = valid.reduce((a, x) => a + Number(x.total || 0), 0);
   const vat = valid.reduce((a, x) => a + Number(x.vat || 0), 0);
   const dups = list.filter(x => x.status === 'مكررة').length, rev = list.filter(x => x.status === 'تحتاج مراجعة').length;
@@ -254,12 +255,12 @@ function renderList() {
     <div class="inv ${x.status === 'مكررة' ? 'is-dup' : ''}" data-id="${esc(x.id)}">
       <div class="thumb">${imgEl(x)}</div>
       <div class="inv-main">
-        <div class="inv-title"><span class="code">${esc(x.code)}</span><span>${esc(x.vendor || 'بدون اسم مؤسسة')}</span>${kindBadge(x.kind)}${statusBadge(x.status, x.dup_of)}</div>
+        <div class="inv-title"><span class="code">${esc(x.code)}</span><span>${esc(x.vendor || 'بدون اسم مؤسسة')}</span>${kindBadge(x.kind)}${statusBadge(x.status, x.dup_of, x)}</div>
         <div class="inv-desc">${esc(x.description || '—')}${x.category ? ' · <b>' + esc(x.category) + '</b>' : ''}</div>
         ${reviewReason(x) ? `<div class="inv-why">⚠️ ${esc(reviewReason(x))}</div>` : ''}
         <div class="inv-sub"><span>📅 ${esc(showDate(x.date) || 'بلا تاريخ')}</span>${x.number ? `<span>رقم: ${esc(x.number)}</span>` : ''}<span>أدخلها ${esc(x.created_by)} — ${esc(x.created_at)}</span>${x.updated_by ? `<span>عدّلها ${esc(x.updated_by)} — ${esc(x.updated_at)}</span>` : ''}</div>
       </div>
-      <div class="amount">${money(x.total)}<small>${Number(x.vat) ? 'ضريبة ' + money(x.vat) : ''}</small></div>
+      <div class="amount">${x.status === 'مرفق' ? '<small>بدون مبلغ</small>' : money(x.total)}<small>${Number(x.vat) ? 'ضريبة ' + money(x.vat) : ''}</small></div>
     </div>`).join('') + (list.length > shown.length ? `<p class="muted center">يظهر أول ${shown.length} من ${list.length} — استخدم البحث أو الفلاتر.</p>` : '');
 }
 ['#fSearch', '#fKind', '#fCat', '#fStatus', '#fFrom', '#fTo'].forEach(s => $(s).addEventListener('input', renderList));
@@ -363,10 +364,53 @@ async function processItem(it) {
         } catch (e2) { r._aiError = e2.message; it.msg = 'تعذّرت القراءة: ' + e2.message; }
       }
     }
+    // المرحلة الأخيرة: إن بقيت ناقصة نكبّر الصورة ونقرأ أجزاءها
+    if (it.opts.ai && incomplete(it.inv) && !it.inv.ai_error && can('edit') && it.inv.file_id) {
+      it.state = 'busy'; it.msg = 'قراءة متأنية بتكبير الصورة…'; renderQueue();
+      try {
+        const z = await zoomRead(it.inv.id, p.file.mime, p.file.data);
+        it.inv = z; it.state = z.status === 'مكررة' ? 'dup' : incomplete(z) ? 'review' : 'ok';
+        it.msg = incomplete(z) ? 'حُفظت — لم تتضح كل البيانات، أكملها يدوياً' : 'قُرئت بعد التكبير ✓';
+      } catch (e3) { it.state = 'review'; it.msg = 'حُفظت — تعذّرت القراءة بالتكبير: ' + e3.message; }
+    }
   } catch (e) { it.state = 'err'; it.msg = e.message; }
   renderQueue();
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+// ---------- القراءة بالتكبير: للفواتير التي لم تُقرأ كاملة ----------
+const incomplete = x => x && x.status === 'تحتاج مراجعة' && (!Number(x.total) || !x.date);
+async function sourceImage(mime, data) {
+  if (/pdf/i.test(mime)) {
+    const bytes = Uint8Array.from(atob(data), c => c.charCodeAt(0));
+    const pages = await pdfToPages(new File([bytes], 'f.pdf', { type: 'application/pdf' }));
+    data = await fileB64(pages[0]); mime = 'image/jpeg';
+  }
+  return await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => no(new Error('تعذّر فتح الصورة')); i.src = `data:${mime};base64,${data}`; });
+}
+// مقاطع مكبّرة ومحسّنة الوضوح: أعلى الفاتورة ووسطها وأسفلها، ونسخة كاملة بتباين أعلى
+function zoomCrops(img) {
+  const W = img.naturalWidth, H = img.naturalHeight, out = [];
+  const regions = H > W * 1.1 ? [[0, 0, 1, 0.42], [0, 0.3, 1, 0.72], [0, 0.58, 1, 1]] : [[0, 0, 0.55, 1], [0.45, 0, 1, 1]];
+  const draw = (sx, sy, sw, sh, enhance) => {
+    const k = Math.min(4, 1568 / Math.max(sw, sh));
+    const c = document.createElement('canvas'); c.width = Math.round(sw * k); c.height = Math.round(sh * k);
+    const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+    x.imageSmoothingQuality = 'high';
+    if (enhance) x.filter = 'grayscale(1) contrast(1.6) brightness(1.08)';
+    x.drawImage(img, sx, sy, sw, sh, 0, 0, c.width, c.height);
+    return { mime: 'image/jpeg', data: c.toDataURL('image/jpeg', 0.9).split(',')[1] };
+  };
+  out.push(draw(0, 0, W, H, true));
+  regions.forEach(([a, b, c2, d]) => out.push(draw(W * a, H * b, W * (c2 - a), H * (d - b), true)));
+  return out;
+}
+async function zoomRead(id, mime, data) {
+  if (!data) { const d = await api('fileData', { id }); mime = d.mime; data = d.data; }
+  const img = await sourceImage(mime, data);
+  const r = await api('reread', { id, save: true, extras: zoomCrops(img) });
+  upsertLocal(r);
+  return r;
+}
 // لماذا تحتاج الفاتورة مراجعة؟
 function reviewReason(x) {
   if (x.status !== 'تحتاج مراجعة') return '';
@@ -383,7 +427,7 @@ function upsertLocal(r) {
   if (!$("#view-list").hidden) renderList();
 }
 // فواتير لها صورة لكنها لم تُقرأ (بلا مبلغ)
-function unread(list) { return list.filter(x => x.file_id && x.status !== 'مكررة' && (!Number(x.total) || x.ai_error)); }
+function unread(list) { return list.filter(x => x.file_id && x.status !== 'مكررة' && x.status !== 'مرفق' && (!Number(x.total) || !x.date || x.ai_error)); }
 let REREADING = false;
 async function rereadMany(ids, btn) {
   if (REREADING || !ids.length) return;
@@ -394,8 +438,13 @@ async function rereadMany(ids, btn) {
       if (btn) btn.textContent = `جارٍ القراءة ${i + 1} من ${ids.length}…`;
       try {
         if (i) await sleep(3000);
-        const r = await api('reread', { id: ids[i], save: true });
-        upsertLocal(r); renderQueueSync(r, 'قُرئت من جديد'); ok++;
+        let r = await api('reread', { id: ids[i], save: true });
+        upsertLocal(r);
+        if (incomplete(r) && r.file_id) {
+          if (btn) btn.textContent = `قراءة متأنية بالتكبير ${i + 1} من ${ids.length}…`;
+          try { r = await zoomRead(ids[i]); } catch (e) { }
+        }
+        renderQueueSync(r, incomplete(r) ? 'لم تتضح كل البيانات' : 'قُرئت من جديد'); if (incomplete(r)) { fail++; lastErr = 'بعضها يحتاج إكمالاً يدوياً'; } else ok++;
       } catch (e) { fail++; lastErr = e.message; }
     }
   } finally { REREADING = false; }
@@ -412,7 +461,7 @@ function renderQueue() {
       const color = { ok: 'var(--green)', dup: 'var(--red)', review: 'var(--amber)', err: 'var(--red)' }[it.state] || 'var(--muted)';
       return `<div class="q-item ${it.state === 'err' ? 'err' : ''}" data-q="${it.id}">
         <div class="thumb">${it.preview ? `<img src="${it.preview}" alt="">` : 'PDF'}</div>
-        <div><div><b>${esc(inv ? (inv.code + ' — ' + (inv.vendor || 'بدون اسم')) : it.file.name)}</b> ${inv ? kindBadge(inv.kind) + statusBadge(inv.status, inv.dup_of) : ''}</div>
+        <div><div><b>${esc(inv ? (inv.code + ' — ' + (inv.vendor || 'بدون اسم')) : it.file.name)}</b> ${inv ? kindBadge(inv.kind) + statusBadge(inv.status, inv.dup_of, inv) : ''}</div>
           ${inv ? `<div class="small muted">${esc(inv.description || '')} ${inv.category ? '· ' + esc(inv.category) : ''} ${inv.date ? '· ' + esc(showDate(inv.date)) : ''}</div>` : ''}
           <div class="q-state" style="color:${color}">${esc(it.msg)}</div>
           ${it.state === 'busy' ? '<div class="bar busy"><i></i></div>' : ''}</div>
@@ -440,7 +489,9 @@ async function openInvoice(id) {
   const dis = editable ? '' : 'disabled';
   const b = modal.open(head(isNew ? 'إدخال يدوي' : `الفاتورة ${esc(inv.code)}`) + `
     <div class="m-body">
-      ${inv.status === 'مكررة' ? `<div class="dup-box"><span>⚠️ هذه الفاتورة <b>مكررة</b> من الفاتورة ذات الرمز <b>${esc(inv.dup_of)}</b>، ومستبعدة من الإجماليات والكشوف.</span>${can('edit') ? '<button class="btn sm" id="notDup">ليست مكررة</button>' : ''}</div>` : ''}
+      ${inv.status === 'مكررة' ? `<div class="dup-box"><span>⚠️ هذه الفاتورة <b>مكررة</b> من الفاتورة ذات الرمز <b>${esc(inv.dup_of)}</b>، ومستبعدة من الإجماليات والكشوف.</span>${can('edit') ? '<span class="row gap"><button class="btn sm" id="asAtt">📎 مرفق للفاتورة الأصلية</button><button class="btn sm" id="notDup">ليست مكررة</button></span>' : ''}</div>` : ''}
+      ${inv.status === 'مرفق' ? `<div class="att-box"><span>📎 هذه <b>مرفق</b> للفاتورة <b>${esc((S.invoices.find(v => v.id === inv.attach_to) || {}).code || '')}</b> — بدون مبلغ، وتظهر صورتها مع فاتورتها في الكشوف.</span>${can('edit') ? '<button class="btn sm" id="unAtt">ليست مرفقاً</button>' : ''}</div>` : ''}
+      ${!isNew && can('edit') && inv.status !== 'مرفق' && inv.status !== 'مكررة' ? `<details class="att-pick"><summary>📎 جعلها مرفقاً لفاتورة أخرى</summary><div class="row gap"><select id="attParent"><option value="">— اختر الفاتورة الأصلية —</option>${sortInv(S.invoices.filter(v => v.id !== inv.id && v.status !== 'مرفق' && v.status !== 'مكررة').slice()).map(v => `<option value="${esc(v.id)}">${esc(v.code)} — ${esc(v.vendor || 'بدون اسم')} — ${money(v.total)}</option>`).join('')}</select><button class="btn sm" id="doAtt">تأكيد</button></div></details>` : ''}
       ${inv.not_dup === 'نعم' ? '<p class="note">أكّد مستخدم أن هذه الفاتورة ليست مكررة.</p>' : ''}
       <div class="edit-grid">
         <form id="invF" class="form-grid">
@@ -454,7 +505,7 @@ async function openInvoice(id) {
           <label class="full">اسم المؤسسة (عملية شراء إن وجد)<input name="vendor" value="${esc(inv.vendor)}" ${dis}></label>
           <label>رقم الفاتورة<input name="number" dir="ltr" value="${esc(inv.number)}" ${dis}></label>
           <label>الرقم الضريبي للمورد<input name="vat_no" dir="ltr" value="${esc(inv.vat_no)}" ${dis}></label>
-          <label>الرمز<input name="code" value="${esc(inv.code)}" ${dis} placeholder="${isNew ? 'تلقائي' : ''}"></label>
+          <label>الرمز (تلقائي حسب التاريخ)<input value="${esc(inv.code || 'يُحدَّد بعد الحفظ')}" disabled></label>
           <label>ملاحظات<input name="notes" value="${esc(inv.notes)}" ${dis}></label>
         </form>
         <div>
@@ -498,12 +549,18 @@ async function openInvoice(id) {
       toast(n ? `حُدّث ${n} حقلاً (باللون الأصفر) — راجعها ثم احفظ` : 'لم تتغير البيانات');
     } catch (err) { toast(err.message, true); } finally { busy(e.target, false); }
   });
+  const attach = async (parentId) => {
+    try { await api('setAttach', { id, parentId }); modal.close(); await loadInvoices(); toast(parentId ? 'أصبحت مرفقاً للفاتورة الأصلية ✓' : 'أصبحت فاتورة مستقلة — أدخل مبلغها'); } catch (err) { toast(err.message, true); }
+  };
+  $('#asAtt', b)?.addEventListener('click', () => attach(inv.dup_of_id || (S.invoices.find(v => v.code === inv.dup_of) || {}).id));
+  $('#unAtt', b)?.addEventListener('click', () => attach(null));
+  $('#doAtt', b)?.addEventListener('click', () => { const v = $('#attParent', b).value; if (!v) return toast('اختر الفاتورة الأصلية', true); attach(v); });
   $('#notDup', b)?.addEventListener('click', async () => {
-    try { const r = await api('setNotDup', { id }); upsertLocal(r); renderList(); renderQueueSync(r); modal.close(); toast(r.status === 'مكررة' ? 'ما زالت مطابقة لفاتورة أخرى' : 'أُلغيت علامة التكرار'); } catch (err) { toast(err.message, true); }
+    try { const r = await api('setNotDup', { id }); modal.close(); await loadInvoices(); renderQueueSync(r); toast(r.status === 'مكررة' ? 'ما زالت مطابقة لفاتورة أخرى' : 'أُلغيت علامة التكرار'); } catch (err) { toast(err.message, true); }
   });
   $('#del', b)?.addEventListener('click', async () => {
     if (!(await confirmBox(`حذف الفاتورة <b>${esc(inv.code)}</b> بمبلغ ${money(inv.total)}؟ يبقى أثرها في السجل.`, 'حذف', true))) return;
-    try { await api('remove', { id }); S.invoices = S.invoices.filter(x => x.id !== id); renderList(); toast('حُذفت الفاتورة'); } catch (err) { toast(err.message, true); }
+    try { await api('remove', { id }); modal.close(); await loadInvoices(); toast('حُذفت الفاتورة'); } catch (err) { toast(err.message, true); }
   });
   $('#save', b)?.addEventListener('click', async e => {
     if (!F.reportValidity()) return;
@@ -513,7 +570,7 @@ async function openInvoice(id) {
       const r = isNew
         ? await api('add', { data, file: newFile?.file, fileHash: newFile?.hash, useAi: false })
         : await api('update', { id, data, file: newFile?.file, fileHash: newFile?.hash });
-      upsertLocal(r); renderList(); renderQueueSync(r); modal.close();
+      modal.close(); await loadInvoices(); renderQueueSync(S.invoices.find(x => x.id === r.id) || r);
       toast(r.status === 'مكررة' ? `حُفظت لكنها مكررة من ${r.dup_of} (${r._dupReason})` : 'تم الحفظ', r.status === 'مكررة');
     } catch (err) { toast(err.message, true); } finally { busy(e.target, false); }
   });
@@ -549,7 +606,7 @@ function reportData(o) {
   let rows = S.invoices.filter(x =>
     (!o.kind || x.kind === o.kind) && (!o.rCat || x.category === o.rCat) &&
     (!o.rFrom || (x.date && x.date >= o.rFrom)) && (!o.rTo || (x.date && x.date <= o.rTo)) &&
-    (o.rDups || x.status !== 'مكررة'));
+    x.status !== 'مرفق' && (o.rDups || x.status !== 'مكررة'));
   rows.sort((a, b) => (a.date || '9').localeCompare(b.date || '9') || String(a.code).localeCompare(String(b.code), 'ar', { numeric: true }));
   return rows;
 }
@@ -577,7 +634,7 @@ function cellText(x, k, i, o) {
   return x[k] ?? '';
 }
 function sums(rows) {
-  const v = rows.filter(x => x.status !== 'مكررة');
+  const v = rows.filter(x => x.status !== 'مكررة' && x.status !== 'مرفق');
   return { n: v.length, total: v.reduce((a, x) => a + Number(x.total || 0), 0), vat: v.reduce((a, x) => a + Number(x.vat || 0), 0), sub: v.reduce((a, x) => a + Number(x.subtotal || x.total || 0), 0) };
 }
 function buildReport() {
@@ -587,8 +644,10 @@ function buildReport() {
   const period = (o.rFrom || o.rTo) ? `الفترة: من ${o.rFrom ? showDate(o.rFrom, o.rDate) : 'البداية'} إلى ${o.rTo ? showDate(o.rTo, o.rDate) : 'اليوم'}` : 'الفترة: جميع الفواتير';
   const L = s => (o.logo === 'both' || o.logo === s) ? `<img src="${esc(logoSrc(s))}" alt="">` : '';
   const thead = `<thead><tr>${cols.map(c => `<th class="${c.cls === 'amt' ? 'amt' : ''}">${c.t}</th>`).join('')}</tr></thead>`;
+  const docImg = (x, label) => x.file_id ? `<a href="${esc(x.file_url)}" target="_blank" rel="noopener" data-view="${esc(x.id)}" title="اضغط لعرض ${label}">${isPdf(x) ? '<span class="pdf-tag">PDF</span>' : `<img src="${thumbCache[x.id] || thumbUrl(x, 300)}" data-id="${esc(x.id)}" onerror="thumbFallback(this)" alt="${label} ${esc(x.code)}">`}</a>` : '';
+  const atts = x => S.invoices.filter(a => a.attach_to === x.id && a.status === 'مرفق');
   const tr = (x, i) => `<tr class="${x.status === 'مكررة' ? 'dup' : ''}">${cols.map(c => c.k === 'image'
-    ? `<td class="img">${x.file_id ? `<a href="${esc(x.file_url)}" target="_blank" rel="noopener" data-view="${esc(x.id)}" title="اضغط لعرض الفاتورة">${isPdf(x) ? '<span class="pdf-tag">PDF</span>' : `<img src="${thumbCache[x.id] || thumbUrl(x, 300)}" data-id="${esc(x.id)}" onerror="thumbFallback(this)" alt="صورة الفاتورة ${esc(x.code)}">`}</a>` : '<span class="muted">—</span>'}</td>`
+    ? `<td class="img">${x.file_id || atts(x).length ? `<div class="imgs">${docImg(x, 'الفاتورة')}${atts(x).map(a => docImg(a, 'المرفق')).join('')}</div>${atts(x).length ? `<small class="att-n">+ ${atts(x).length} مرفق</small>` : ''}` : '<span class="muted">—</span>'}</td>`
     : `<td class="${c.cls || ''}">${esc(cellText(x, c.k, i, o))}</td>`).join('')}</tr>`;
   const totRow = (s, label) => {
     const ti = cols.findIndex(c => c.k === 'total');

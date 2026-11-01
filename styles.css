@@ -302,3 +302,14 @@ table.plain td.small { min-width: 220px; }
 .inv-why { color: var(--amber); font-size: 13px; font-weight: 600; }
 /* أزرار الحفظ والاختبار في الإعدادات تبقى ظاهرة أسفل النافذة دون الحاجة للنزول */
 .set-pane > .row.end:last-child { position: sticky; bottom: -16px; background: #fff; padding: 12px 0; margin-bottom: -16px; border-top: 1px solid var(--line); z-index: 2; }
+
+.b-att { background: #eef0fb; color: #3b4a9c; }
+.att-box { background: #eef0fb; border: 1px solid #cdd3f2; color: #26306b; padding: 10px 12px; border-radius: 10px; margin-bottom: 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: space-between; }
+.att-pick { margin-bottom: 12px; }
+.att-pick summary { cursor: pointer; color: var(--green); font-weight: 600; font-size: 14px; }
+.att-pick .row { margin-top: 8px; }
+.att-pick select { flex: 1; min-width: 220px; }
+.sheet td.img .imgs { display: flex; gap: 4px; justify-content: center; flex-wrap: wrap; }
+.sheet td.img .imgs img { width: 70px; height: 80px; }
+.sheet td.img .imgs a:only-child img { width: 90px; height: 90px; }
+.sheet .att-n { display: block; font-size: 11px; color: #3b4a9c; font-family: sans-serif; }
