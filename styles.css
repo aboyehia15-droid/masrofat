@@ -300,3 +300,5 @@ table.plain td.small { min-width: 220px; }
 }
 
 .inv-why { color: var(--amber); font-size: 13px; font-weight: 600; }
+/* أزرار الحفظ والاختبار في الإعدادات تبقى ظاهرة أسفل النافذة دون الحاجة للنزول */
+.set-pane > .row.end:last-child { position: sticky; bottom: -16px; background: #fff; padding: 12px 0; margin-bottom: -16px; border-top: 1px solid var(--line); z-index: 2; }
