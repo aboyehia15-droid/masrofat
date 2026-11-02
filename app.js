@@ -59,7 +59,7 @@ function statusBadge(s, dupOf, x) {
   if (s === 'تحتاج مراجعة') return '<span class="badge b-review">تحتاج مراجعة</span>';
   return '';
 }
-const isTaalumTax = x => x.kind === 'ضريبية' && x.taalum === 'نعم'; // الفواتير الضريبية المكتوب عليها جمعية تعلم
+const isTaalumTax = x => x.kind === 'ضريبية' && x.taalum === 'نعم'; // الفواتير الضريبية المكتوب عليها جمعية تعلم أو المركز الخيري لتعليم القرآن وعلومه
 function logoSrc(side) { const v = S.settings['logo' + (side === 'right' ? 'Right' : 'Left')] || S.boot?.['logo' + (side === 'right' ? 'Right' : 'Left')]; return v || (side === 'right' ? window.DEFAULT_LOGO_RIGHT : window.DEFAULT_LOGO_LEFT); }
 function thumbUrl(inv, size = 400) { return inv.file_id ? `https://drive.google.com/thumbnail?id=${inv.file_id}&sz=w${size}` : ''; }
 function isPdf(inv) { return /pdf/i.test(inv.mime || ''); }
@@ -257,7 +257,7 @@ function renderList() {
     <div class="inv ${x.status === 'مكررة' ? 'is-dup' : ''}" data-id="${esc(x.id)}">
       <div class="thumb">${imgEl(x)}</div>
       <div class="inv-main">
-        <div class="inv-title"><span class="code">${esc(x.code)}</span><span>${esc(x.vendor || 'بدون اسم مؤسسة')}</span>${kindBadge(x.kind)}${x.taalum === 'نعم' ? '<span class="badge b-taalum">جمعية تعلم</span>' : ''}${statusBadge(x.status, x.dup_of, x)}</div>
+        <div class="inv-title"><span class="code">${esc(x.code)}</span><span>${esc(x.vendor || 'بدون اسم مؤسسة')}</span>${kindBadge(x.kind)}${x.taalum === 'نعم' ? '<span class="badge b-taalum">جمعية تعلم / المركز الخيري</span>' : ''}${statusBadge(x.status, x.dup_of, x)}</div>
         <div class="inv-desc">${esc(x.description || '—')}${x.category ? ' · <b>' + esc(x.category) + '</b>' : ''}</div>
         ${reviewReason(x) ? `<div class="inv-why">⚠️ ${esc(reviewReason(x))}</div>` : ''}
         <div class="inv-sub"><span>📅 ${esc(showDate(x.date) || 'بلا تاريخ')}</span>${x.number ? `<span>رقم: ${esc(x.number)}</span>` : ''}<span>أدخلها ${esc(x.created_by)} — ${esc(x.created_at)}</span>${x.updated_by ? `<span>عدّلها ${esc(x.updated_by)} — ${esc(x.updated_at)}</span>` : ''}</div>
@@ -509,7 +509,7 @@ async function openInvoice(id) {
           <label>الرقم الضريبي للمورد<input name="vat_no" dir="ltr" value="${esc(inv.vat_no)}" ${dis}></label>
           <label>الرمز (تلقائي حسب التاريخ)<input value="${esc(inv.code || 'يُحدَّد بعد الحفظ')}" disabled></label>
           <label>ملاحظات<input name="notes" value="${esc(inv.notes)}" ${dis}></label>
-          <label>مكتوب عليها جمعية تعلم<select name="taalum" ${dis}>${[['', 'لم تُفحص'], ['نعم', 'نعم'], ['لا', 'لا']].map(([v, t]) => `<option value="${v}" ${v === (inv.taalum || '') ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+          <label>مكتوب عليها جمعية تعلم أو المركز الخيري<select name="taalum" ${dis}>${[['', 'لم تُفحص'], ['نعم', 'نعم'], ['لا', 'لا']].map(([v, t]) => `<option value="${v}" ${v === (inv.taalum || '') ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
         </form>
         <div>
           <div class="viewer" id="viewer">${inv.file_id ? (isPdf(inv) ? `<a class="btn" href="${esc(inv.file_url)}" target="_blank" rel="noopener">فتح ملف PDF</a>` : `<img src="${thumbUrl(inv, 1600)}" data-id="${esc(inv.id)}" data-size="big" onerror="thumbFallback(this)" alt="صورة الفاتورة">`) : '<span class="muted">لا توجد صورة</span>'}</div>
@@ -615,7 +615,7 @@ function reportData(o) {
 }
 function reportTitle(o) {
   const base = S.settings.reportTitle || 'مصروفات مجمع ابن تيمية';
-  const kindT = { '': 'كشف بجميع الفواتير', 'ضريبية': 'كشف الفواتير الضريبية', 'بدون ضريبة': 'كشف الفواتير بدون ضريبة', 'ورقة مكتوبة': 'كشف الأوراق المكتوبة بدل الفاتورة', taalum: 'كشف الفواتير الضريبية المكتوب عليها جمعية تعلم' }[o.kind];
+  const kindT = { '': 'كشف بجميع الفواتير', 'ضريبية': 'كشف الفواتير الضريبية', 'بدون ضريبة': 'كشف الفواتير بدون ضريبة', 'ورقة مكتوبة': 'كشف الأوراق المكتوبة بدل الفاتورة', taalum: 'كشف الفواتير الضريبية باسم جمعية تعلم أو المركز الخيري لتعليم القرآن وعلومه' }[o.kind];
   return { main: base, sub: kindT + (o.rGroup ? ' — حسب التصنيف' : '') };
 }
 function columns(o) {
@@ -697,7 +697,7 @@ function buildReport() {
   renderTaalumNote();
 }
 $('#btnReport').onclick = buildReport;
-// ---------- فحص الفواتير الضريبية السابقة: هل مكتوب عليها جمعية تعلم؟ ----------
+// ---------- فحص الفواتير الضريبية السابقة: هل مكتوب عليها جمعية تعلم أو المركز الخيري؟ ----------
 let TCHECK = false;
 function taalumPending(o) { return S.invoices.filter(x => x.kind === 'ضريبية' && !x.taalum && x.status !== 'مكررة' && x.status !== 'مرفق' && inReportScope(x, o)); }
 function renderTaalumNote() {
@@ -734,7 +734,7 @@ async function checkTaalumMany(btn) {
   } finally { TCHECK = false; }
   renderList();
   if (S.report && S.report.o.kind === 'taalum') buildReport(); else renderTaalumNote();
-  const msg = `مكتوب عليها: ${yes} — غير مكتوب: ${no}` + (unclear ? ` — لم تتضح: ${unclear} (حدّدها من نافذة الفاتورة)` : '') + (fail ? ` — تعذّر: ${fail} (${lastErr})` : '');
+  const msg = `باسم الجمعية أو المركز: ${yes} — بغير ذلك: ${no}` + (unclear ? ` — لم تتضح: ${unclear} (حدّدها من نافذة الفاتورة)` : '') + (fail ? ` — تعذّر: ${fail} (${lastErr})` : '');
   toast(msg, !!(fail || unclear));
 }
 $('#rKind').addEventListener('change', renderTaalumNote);

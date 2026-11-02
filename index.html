@@ -84,7 +84,7 @@
       <div class="stats" id="stats"></div>
       <div class="toolbar">
         <input type="search" id="fSearch" placeholder="بحث: المؤسسة، البيان، رقم الفاتورة، الرمز…">
-        <select id="fKind"><option value="">كل الأنواع</option><option>ضريبية</option><option>بدون ضريبة</option><option>ورقة مكتوبة</option><option value="taalum">ضريبية مكتوب عليها جمعية تعلم</option></select>
+        <select id="fKind"><option value="">كل الأنواع</option><option>ضريبية</option><option>بدون ضريبة</option><option>ورقة مكتوبة</option><option value="taalum">ضريبية باسم جمعية تعلم أو المركز الخيري</option></select>
         <select id="fCat"><option value="">كل التصنيفات</option></select>
         <select id="fStatus"><option value="">كل الحالات</option><option>سليمة</option><option>مكررة</option><option>تحتاج مراجعة</option><option>مرفق</option></select>
         <label class="inline">من <input type="date" id="fFrom"></label>
@@ -143,7 +143,7 @@
           <div class="seg wrap" id="rKind">
             <label><input type="radio" name="rKind" value="" checked><span>كشف كامل بجميع الفواتير</span></label>
             <label><input type="radio" name="rKind" value="ضريبية"><span>الفواتير الضريبية</span></label>
-            <label><input type="radio" name="rKind" value="taalum"><span>الضريبية المكتوب عليها جمعية تعلم</span></label>
+            <label><input type="radio" name="rKind" value="taalum"><span>الضريبية باسم جمعية تعلم أو المركز الخيري</span></label>
             <label><input type="radio" name="rKind" value="بدون ضريبة"><span>فواتير بدون ضريبة</span></label>
             <label><input type="radio" name="rKind" value="ورقة مكتوبة"><span>أوراق مكتوبة بدل الفاتورة</span></label>
           </div>
@@ -207,6 +207,6 @@
 <!-- الكشف المطبوع -->
 <div id="printArea"></div>
 
-<script src="app.js?v=9"></script>
+<script src="app.js?v=10"></script>
 </body>
 </html>
