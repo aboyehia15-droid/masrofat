@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Amiri:wght@400;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=6">
+<link rel="stylesheet" href="styles.css?v=7">
 <script src="config.js?v=2"></script>
 </head>
 <body>
@@ -84,7 +84,7 @@
       <div class="stats" id="stats"></div>
       <div class="toolbar">
         <input type="search" id="fSearch" placeholder="بحث: المؤسسة، البيان، رقم الفاتورة، الرمز…">
-        <select id="fKind"><option value="">كل الأنواع</option><option>ضريبية</option><option>بدون ضريبة</option><option>ورقة مكتوبة</option></select>
+        <select id="fKind"><option value="">كل الأنواع</option><option>ضريبية</option><option>بدون ضريبة</option><option>ورقة مكتوبة</option><option value="taalum">ضريبية مكتوب عليها جمعية تعلم</option></select>
         <select id="fCat"><option value="">كل التصنيفات</option></select>
         <select id="fStatus"><option value="">كل الحالات</option><option>سليمة</option><option>مكررة</option><option>تحتاج مراجعة</option><option>مرفق</option></select>
         <label class="inline">من <input type="date" id="fFrom"></label>
@@ -143,6 +143,7 @@
           <div class="seg wrap" id="rKind">
             <label><input type="radio" name="rKind" value="" checked><span>كشف كامل بجميع الفواتير</span></label>
             <label><input type="radio" name="rKind" value="ضريبية"><span>الفواتير الضريبية</span></label>
+            <label><input type="radio" name="rKind" value="taalum"><span>الضريبية المكتوب عليها جمعية تعلم</span></label>
             <label><input type="radio" name="rKind" value="بدون ضريبة"><span>فواتير بدون ضريبة</span></label>
             <label><input type="radio" name="rKind" value="ورقة مكتوبة"><span>أوراق مكتوبة بدل الفاتورة</span></label>
           </div>
@@ -187,6 +188,7 @@
           <button class="btn" id="btnExcel" disabled>⬇️ تصدير Excel</button>
         </div>
       </div>
+      <div id="reportNote"></div>
       <div id="reportWrap" class="report-wrap"><p class="muted center">اختر نوع الكشف ثم اضغط «عرض الكشف».</p></div>
     </section>
 
@@ -205,6 +207,6 @@
 <!-- الكشف المطبوع -->
 <div id="printArea"></div>
 
-<script src="app.js?v=8"></script>
+<script src="app.js?v=9"></script>
 </body>
 </html>
